@@ -76,6 +76,10 @@ function registerPendingAwareEditTool(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...base,
+    // Force the sequential tool-execution path in agent-loop so each edit in a
+    // batched assistant message runs right after its confirmation is accepted,
+    // instead of all executions being deferred until the last acceptance.
+    executionMode: "sequential",
     renderCall(args: any, theme: any, context: any) {
       const component: any = base.renderCall!(args, theme, context);
       if (!context.state?.noloSettled && isCleanPreview(component)) {
