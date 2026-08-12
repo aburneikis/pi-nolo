@@ -38,7 +38,7 @@
  * are instantly blocked instead; safe read-only bash commands still run.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { createEditToolDefinition, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolve, sep } from "node:path";
 import { accessSync, constants, statSync } from "node:fs";
 import { loadConfig, DEFAULT_SAFE_PREFIXES, DEFAULT_DANGEROUS_PATTERNS, DEFAULT_SEGMENT_DANGEROUS_PATTERNS } from "./src/config.js";
@@ -66,6 +66,34 @@ import {
   toggleScopeWrites,
 } from "./src/yolo.js";
 
+// Re-register the builtin edit tool with one rendering tweak: while the call is
+// awaiting confirmation (diff preview computed but tool not yet executed), keep
+// the grey pending header background instead of switching to the success color.
+function registerPendingAwareEditTool(pi: ExtensionAPI) {
+  const base = createEditToolDefinition(process.cwd());
+  const isCleanPreview = (component: any): boolean =>
+    component?.preview && !("error" in component.preview);
+
+  pi.registerTool({
+    ...base,
+    renderCall(args: any, theme: any, context: any) {
+      const component: any = base.renderCall!(args, theme, context);
+      if (!context.state?.noloSettled && isCleanPreview(component)) {
+        component.setBgFn((text: string) => theme.bg("toolPendingBg", text));
+      }
+      return component;
+    },
+    renderResult(result: any, options: any, theme: any, context: any) {
+      if (context.state) context.state.noloSettled = true;
+      const callComponent: any = context.state?.callComponent;
+      if (callComponent && isCleanPreview(callComponent) && !context.isError) {
+        callComponent.setBgFn((text: string) => theme.bg("toolSuccessBg", text));
+      }
+      return base.renderResult!(result, options, theme, context);
+    },
+  } as any);
+}
+
 export default function (pi: ExtensionAPI) {
   // Resolve the YOLO-cycle shortcut once at load time. registerShortcut takes a
   // literal key, so changing `shortcut` in nolo.json requires /reload to apply.
@@ -76,6 +104,8 @@ export default function (pi: ExtensionAPI) {
   let projectRoot = process.cwd();
   let strictNonInteractive = loadConfig().strictNonInteractive;
   const yolo = createYoloState();
+
+  registerPendingAwareEditTool(pi);
 
   // Decisions pre-computed in message_end, keyed by toolCallId. `undefined` value
   // means "allow". Consumed (and removed) by the tool_call hook.
