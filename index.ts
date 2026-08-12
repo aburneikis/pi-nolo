@@ -24,13 +24,20 @@
  * Scope-writes (config `defaultScopeWrites`, toggle live with /scopewrites): when on,
  * `writes` mode still confirms write/edit calls that resolve outside the project root.
  *
- * Confirmation timing: all confirmations are asked inline in the `tool_call` hook, and the
- * gated tools are re-registered with executionMode "sequential" so each call in a batched
- * assistant message executes right after its own acceptance (the default parallel path would
- * defer all executions until the last acceptance). The TUI starts bash's elapsed timer on
- * `tool_execution_start`, which fires before the gate, so the re-registered bash tool records
- * the real start time when `execute` begins (after the gate) and the renderers overwrite the
- * timer state with it, keeping the reported "Took" duration accurate.
+ * Confirmation timing (pipelined): bash and edit are re-registered so their confirmation
+ * happens inside `execute`, not in the `tool_call` gate. On agent-loop's parallel path all
+ * gates resolve immediately, so every execute closure starts concurrently; two shared promise
+ * chains then coordinate them. The confirm chain shows prompts one at a time in message
+ * order. Accepted bash calls run immediately and concurrently (matching pi's default
+ * parallel batch behavior); accepted edit calls additionally queue on the exec chain, so
+ * they run one at a time in message order. Accepting call N therefore starts (or queues)
+ * its execution immediately AND reveals prompt N+1 while earlier calls are still running.
+ * Rejected calls fail fast with "Blocked by user" without occupying the exec chain. The TUI
+ * starts bash's elapsed timer on `tool_execution_start` (before confirm and queue wait), so
+ * the bash wrapper records the real start when its turn on the exec chain begins and the
+ * renderers overwrite the timer state with it, keeping "Took" accurate. Write (rarely
+ * batched) still confirms in the `tool_call` gate, as does everything in strict
+ * non-interactive mode.
  *
  * Strict non-interactive (config `strictNonInteractive`, or env NOLO_STRICT=1/0): when
  * running without a UI (e.g. `pi -p` / --mode json) there is no way to confirm, so by
@@ -66,13 +73,43 @@ import {
   toggleScopeWrites,
 } from "./src/yolo.js";
 
+// Confirmation callback provided by the extension entry point. Late-bound so the
+// tool registration helpers can be defined at module scope.
+type ConfirmFn = (toolName: string, input: any, ctx: any) => Promise<ToolDecision>;
+
+// Two shared chains pipeline batched tool calls (all execute closures run
+// concurrently on agent-loop's parallel path):
+//   confirmChain -- prompts appear one at a time, in message order
+//   execChain    -- serialized calls (edit) execute one at a time, in message order
+// Accepting call N releases its execution and prompt N+1 at once. Bash runs
+// concurrently on accept; edit queues on the exec chain. A blocked call throws
+// immediately and never occupies the exec chain.
+let confirmChain: Promise<unknown> = Promise.resolve();
+let execChain: Promise<unknown> = Promise.resolve();
+
+function pipeline<T>(
+  confirm: () => Promise<ToolDecision>,
+  run: () => Promise<T>,
+  serializeExec: boolean,
+): Promise<T> {
+  const decision = confirmChain.then(confirm, confirm);
+  confirmChain = decision.catch(() => undefined);
+  return decision.then((d) => {
+    if (d?.block) throw new Error(d.reason ?? "Blocked by user");
+    if (!serializeExec) return run();
+    const result = execChain.then(run, run);
+    execChain = result.catch(() => undefined);
+    return result;
+  });
+}
+
 // Re-register the builtin bash tool with two changes:
-//   - executionMode "sequential": each batched call runs right after its acceptance.
+//   - pipelined confirm via pipeline(); execution starts on accept and runs
+//     concurrently with other accepted calls.
 //   - accurate "Took" time: the TUI sets state.startedAt on the first render after
-//     tool_execution_start, which fires before the confirmation gate. execute() only runs
-//     after the gate, so we record the real start there and overwrite state.startedAt in
-//     the renderers.
-function registerSequentialBashTool(pi: ExtensionAPI) {
+//     tool_execution_start, which fires before the confirmation. We record the real
+//     start when execution begins and overwrite state.startedAt in the renderers.
+function registerPipelinedBashTool(pi: ExtensionAPI, confirm: ConfirmFn) {
   const base = createBashToolDefinition(process.cwd());
   const actualStartTimes = new Map<string, number>();
 
@@ -85,14 +122,25 @@ function registerSequentialBashTool(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...base,
-    executionMode: "sequential",
     async execute(toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) {
-      actualStartTimes.set(toolCallId, Date.now());
       try {
-        return await base.execute(toolCallId, params, signal, onUpdate, ctx);
-      } finally {
-        // Keep the entry briefly for the final render, then drop it.
-        setTimeout(() => actualStartTimes.delete(toolCallId), 60_000).unref?.();
+        return await pipeline(
+          () => (ctx.hasUI ? confirm("bash", params, ctx) : Promise.resolve(undefined)),
+          async () => {
+            actualStartTimes.set(toolCallId, Date.now());
+            try {
+              return await base.execute(toolCallId, params, signal, onUpdate, ctx);
+            } finally {
+              // Keep the entry briefly for the final render, then drop it.
+              setTimeout(() => actualStartTimes.delete(toolCallId), 60_000).unref?.();
+            }
+          },
+          false,
+        );
+      } catch (err) {
+        // Blocked before execution: zero out the timer instead of showing the confirm wait.
+        if (!actualStartTimes.has(toolCallId)) actualStartTimes.set(toolCallId, Date.now());
+        throw err;
       }
     },
     renderCall(args: any, theme: any, context: any) {
@@ -106,20 +154,24 @@ function registerSequentialBashTool(pi: ExtensionAPI) {
   } as any);
 }
 
-// Re-register the builtin edit tool with one rendering tweak: while the call is
-// awaiting confirmation (diff preview computed but tool not yet executed), keep
-// the grey pending header background instead of switching to the success color.
-function registerPendingAwareEditTool(pi: ExtensionAPI) {
+// Re-register the builtin edit tool with pipelined confirm + serialized execution,
+// and one rendering tweak: while the call is awaiting confirmation (diff preview
+// computed but tool not yet executed), keep the grey pending header background
+// instead of switching to the success color.
+function registerPendingAwareEditTool(pi: ExtensionAPI, confirm: ConfirmFn) {
   const base = createEditToolDefinition(process.cwd());
   const isCleanPreview = (component: any): boolean =>
     component?.preview && !("error" in component.preview);
 
   pi.registerTool({
     ...base,
-    // Force the sequential tool-execution path in agent-loop so each edit in a
-    // batched assistant message runs right after its confirmation is accepted,
-    // instead of all executions being deferred until the last acceptance.
-    executionMode: "sequential",
+    async execute(toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) {
+      return pipeline(
+        () => (ctx.hasUI ? confirm("edit", params, ctx) : Promise.resolve(undefined)),
+        () => base.execute(toolCallId, params, signal, onUpdate, ctx),
+        true,
+      );
+    },
     renderCall(args: any, theme: any, context: any) {
       const component: any = base.renderCall!(args, theme, context);
       if (!context.state?.noloSettled && isCleanPreview(component)) {
@@ -148,9 +200,6 @@ export default function (pi: ExtensionAPI) {
   let projectRoot = process.cwd();
   let strictNonInteractive = loadConfig().strictNonInteractive;
   const yolo = createYoloState();
-
-  registerPendingAwareEditTool(pi);
-  registerSequentialBashTool(pi);
 
   // True when scope-writes is on and the path resolves outside the project root.
   const isOutsideRoot = (rawPath: string): boolean => {
@@ -276,5 +325,14 @@ export default function (pi: ExtensionAPI) {
     return undefined;
   };
 
-  pi.on("tool_call", async (event, ctx) => decide(event.toolName, event.input, ctx));
+  registerPendingAwareEditTool(pi, decide);
+  registerPipelinedBashTool(pi, decide);
+
+  pi.on("tool_call", async (event, ctx) => {
+    // With a UI, bash and edit confirm inside their execute wrappers (pipelined);
+    // the gate must not prompt for them or it would serialize prompts behind the
+    // prepare loop. Without a UI, decide() only applies strict-mode blocking.
+    if (ctx.hasUI && (event.toolName === "bash" || event.toolName === "edit")) return undefined;
+    return decide(event.toolName, event.input, ctx);
+  });
 }
