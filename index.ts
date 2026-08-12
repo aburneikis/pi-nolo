@@ -24,6 +24,13 @@
  * Scope-writes (config `defaultScopeWrites`, toggle live with /scopewrites): when on,
  * `writes` mode still confirms write/edit calls that resolve outside the project root.
  *
+ * Confirmation timing: the TUI starts a tool's elapsed timer when `tool_execution_start`
+ * fires, which happens before the `tool_call` gate runs. Confirming there would inflate the
+ * reported "Took" duration. So confirmations are asked in `message_end` of the assistant
+ * message (before any tool starts) and the decision is cached per toolCallId; the `tool_call`
+ * hook then only replays the cached decision. Tool calls with no cached decision (e.g. injected
+ * by another extension) still fall back to confirming inline.
+ *
  * Strict non-interactive (config `strictNonInteractive`, or env NOLO_STRICT=1/0): when
  * running without a UI (e.g. `pi -p` / --mode json) there is no way to confirm, so by
  * default nothing is gated. With strict mode on, write/edit and unsafe bash commands
@@ -35,6 +42,7 @@ import { resolve, sep } from "node:path";
 import { accessSync, constants, statSync } from "node:fs";
 import { loadConfig, DEFAULT_SAFE_PREFIXES, DEFAULT_DANGEROUS_PATTERNS, DEFAULT_SEGMENT_DANGEROUS_PATTERNS } from "./src/config.js";
 import { isSafeCommand } from "./src/safety.js";
+import type { ToolDecision } from "./src/types.js";
 
 // True when the path is an existing, traversable directory. Lets the safety
 // check keep a tracked `cd` directory across `;` boundaries: a cd to a
@@ -68,6 +76,10 @@ export default function (pi: ExtensionAPI) {
   let projectRoot = process.cwd();
   let strictNonInteractive = loadConfig().strictNonInteractive;
   const yolo = createYoloState();
+
+  // Decisions pre-computed in message_end, keyed by toolCallId. `undefined` value
+  // means "allow". Consumed (and removed) by the tool_call hook.
+  const pendingDecisions = new Map<string, ToolDecision>();
 
   // True when scope-writes is on and the path resolves outside the project root.
   const isOutsideRoot = (rawPath: string): boolean => {
@@ -123,9 +135,8 @@ export default function (pi: ExtensionAPI) {
 
   // --- Tool gate ---
 
-  pi.on("tool_call", async (event, ctx) => {
-    const { toolName } = event;
-
+  // Runs the gating rules for one tool call, asking the user when needed.
+  const decide = async (toolName: string, input: any, ctx: any): Promise<ToolDecision> => {
     // Non-interactive (e.g. `pi -p` / --mode json): no way to confirm.
     // Default: don't gate. In strict mode: instantly block anything that
     // would have required confirmation (write/edit and unsafe bash).
@@ -138,7 +149,7 @@ export default function (pi: ExtensionAPI) {
         };
       }
       if (toolName === "bash") {
-        const command = event.input.command as string;
+        const command = input.command as string;
         if (
           isSafeCommand(command, safePrefixes, dangerousRegexes, segmentDangerousRegexes, {
             isExecutableDir,
@@ -156,10 +167,10 @@ export default function (pi: ExtensionAPI) {
 
     if (toolName === "write") {
       if (yolo.mode === "full") return undefined;
-      if (yolo.mode === "writes" && !isOutsideRoot(event.input.path as string)) return undefined;
+      if (yolo.mode === "writes" && !isOutsideRoot(input.path as string)) return undefined;
 
-      const path = event.input.path as string;
-      const content = (event.input.content as string) ?? "";
+      const path = input.path as string;
+      const content = (input.content as string) ?? "";
       const lines = content.split("\n").length;
 
       const title = yolo.mode === "writes" ? "Write outside project root?" : "Write file?";
@@ -168,16 +179,16 @@ export default function (pi: ExtensionAPI) {
 
     } else if (toolName === "edit") {
       if (yolo.mode === "full") return undefined;
-      if (yolo.mode === "writes" && !isOutsideRoot(event.input.path as string)) return undefined;
+      if (yolo.mode === "writes" && !isOutsideRoot(input.path as string)) return undefined;
 
       const title = yolo.mode === "writes" ? "Edit outside project root?" : "Edit file?";
-      const confirmed = await ctx.ui.confirm(title, event.input.path as string);
+      const confirmed = await ctx.ui.confirm(title, input.path as string);
       if (!confirmed) return { block: true, reason: "Blocked by user" };
 
     } else if (toolName === "bash") {
       if (yolo.mode === "full") return undefined;
 
-      const command = event.input.command as string;
+      const command = input.command as string;
       if (
         isSafeCommand(command, safePrefixes, dangerousRegexes, segmentDangerousRegexes, {
           isExecutableDir,
@@ -193,5 +204,28 @@ export default function (pi: ExtensionAPI) {
     }
 
     return undefined;
+  };
+
+  // Ask for confirmation up front, while no tool has started executing yet, so the
+  // TUI's per-tool elapsed timer only covers real execution time.
+  pi.on("message_end", async (event, ctx) => {
+    const message = event.message as any;
+    if (message?.role !== "assistant" || !Array.isArray(message.content)) return undefined;
+
+    pendingDecisions.clear();
+    for (const part of message.content) {
+      if (part?.type !== "toolCall") continue;
+      pendingDecisions.set(part.id, await decide(part.name, part.arguments ?? {}, ctx));
+    }
+    return undefined;
+  });
+
+  pi.on("tool_call", async (event, ctx) => {
+    if (pendingDecisions.has(event.toolCallId)) {
+      const decision = pendingDecisions.get(event.toolCallId);
+      pendingDecisions.delete(event.toolCallId);
+      return decision;
+    }
+    return decide(event.toolName, event.input, ctx);
   });
 }

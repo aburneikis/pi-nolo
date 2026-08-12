@@ -16,6 +16,9 @@ export const YOLO_ENTRY_TYPE = "nolo:yolo-mode";
 /** Custom session entry type for persisting the scope-writes toggle across reloads */
 export const SCOPE_WRITES_ENTRY_TYPE = "nolo:scope-writes";
 
+/** Result of the nolo gate for one tool call: `undefined` allows it. */
+export type ToolDecision = { block: true; reason: string } | undefined;
+
 // --- Config shape ---
 
 export interface NoloConfig {
