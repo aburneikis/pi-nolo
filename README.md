@@ -43,9 +43,7 @@ NOLO_STRICT=1 pi -p "Review the code in src/"
 
 ## Pre-rendered edit diffs
 
-As of pi ~0.63.0, the built-in edit tool only shows diffs after execution. This extension includes a built-in pre-renderer (ported from [pi-pre-render-edit](https://github.com/burneikis/pi-pre-render-edit)) that computes and displays the diff as soon as the tool arguments are complete -- before the edit is applied. This means you can see exactly what will change while the confirmation dialog is open.
-
-If you previously installed `pi-pre-render-edit` separately, you can remove it -- the functionality is now bundled here.
+Since pi ~0.84, the built-in edit tool pre-renders the diff as soon as the tool arguments are complete -- before the edit is applied. Because nolo confirms edits in the `tool_call` hook (after the tool call is rendered), you see exactly what will change while the confirmation dialog is open. The bundled pre-renderer that older versions of this extension carried is no longer needed and has been removed.
 
 ## YOLO modes
 

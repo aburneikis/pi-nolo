@@ -65,7 +65,6 @@ import {
   cycleYoloMode,
   toggleScopeWrites,
 } from "./src/yolo.js";
-import { registerPreRenderEdit } from "./src/pre-render-edit.js";
 
 export default function (pi: ExtensionAPI) {
   // Resolve the YOLO-cycle shortcut once at load time. registerShortcut takes a
@@ -108,7 +107,6 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.setStatus("nolo", renderStatus(yolo, ctx.ui.theme));
     }
 
-    registerPreRenderEdit(pi, ctx.cwd);
   });
 
   // --- /yolo command and configured shortcut: cycle through modes ---
