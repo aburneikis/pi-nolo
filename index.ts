@@ -24,13 +24,13 @@
  * Scope-writes (config `defaultScopeWrites`, toggle live with /scopewrites): when on,
  * `writes` mode still confirms write/edit calls that resolve outside the project root.
  *
- * Confirmation timing: the TUI starts bash's elapsed timer when `tool_execution_start`
- * fires, which happens before the `tool_call` gate runs. Confirming there would inflate the
- * reported "Took" duration. So bash confirmations are asked in `message_end` of the assistant
- * message (before any tool starts) and the decision is cached per toolCallId; the `tool_call`
- * hook then only replays the cached decision. Write/edit (no timer) and tool calls with no
- * cached decision still confirm inline in the `tool_call` hook, after the TUI has rendered
- * the tool call and its pre-rendered edit diff.
+ * Confirmation timing: all confirmations are asked inline in the `tool_call` hook, and the
+ * gated tools are re-registered with executionMode "sequential" so each call in a batched
+ * assistant message executes right after its own acceptance (the default parallel path would
+ * defer all executions until the last acceptance). The TUI starts bash's elapsed timer on
+ * `tool_execution_start`, which fires before the gate, so the re-registered bash tool records
+ * the real start time when `execute` begins (after the gate) and the renderers overwrite the
+ * timer state with it, keeping the reported "Took" duration accurate.
  *
  * Strict non-interactive (config `strictNonInteractive`, or env NOLO_STRICT=1/0): when
  * running without a UI (e.g. `pi -p` / --mode json) there is no way to confirm, so by
@@ -38,7 +38,7 @@
  * are instantly blocked instead; safe read-only bash commands still run.
  */
 
-import { createEditToolDefinition, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createBashToolDefinition, createEditToolDefinition, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolve, sep } from "node:path";
 import { accessSync, constants, statSync } from "node:fs";
 import { loadConfig, DEFAULT_SAFE_PREFIXES, DEFAULT_DANGEROUS_PATTERNS, DEFAULT_SEGMENT_DANGEROUS_PATTERNS } from "./src/config.js";
@@ -65,6 +65,46 @@ import {
   cycleYoloMode,
   toggleScopeWrites,
 } from "./src/yolo.js";
+
+// Re-register the builtin bash tool with two changes:
+//   - executionMode "sequential": each batched call runs right after its acceptance.
+//   - accurate "Took" time: the TUI sets state.startedAt on the first render after
+//     tool_execution_start, which fires before the confirmation gate. execute() only runs
+//     after the gate, so we record the real start there and overwrite state.startedAt in
+//     the renderers.
+function registerSequentialBashTool(pi: ExtensionAPI) {
+  const base = createBashToolDefinition(process.cwd());
+  const actualStartTimes = new Map<string, number>();
+
+  const fixStartedAt = (context: any) => {
+    const actualStart = actualStartTimes.get(context.toolCallId);
+    if (actualStart !== undefined && context.state) {
+      context.state.startedAt = actualStart;
+    }
+  };
+
+  pi.registerTool({
+    ...base,
+    executionMode: "sequential",
+    async execute(toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) {
+      actualStartTimes.set(toolCallId, Date.now());
+      try {
+        return await base.execute(toolCallId, params, signal, onUpdate, ctx);
+      } finally {
+        // Keep the entry briefly for the final render, then drop it.
+        setTimeout(() => actualStartTimes.delete(toolCallId), 60_000).unref?.();
+      }
+    },
+    renderCall(args: any, theme: any, context: any) {
+      fixStartedAt(context);
+      return base.renderCall!(args, theme, context);
+    },
+    renderResult(result: any, options: any, theme: any, context: any) {
+      fixStartedAt(context);
+      return base.renderResult!(result, options, theme, context);
+    },
+  } as any);
+}
 
 // Re-register the builtin edit tool with one rendering tweak: while the call is
 // awaiting confirmation (diff preview computed but tool not yet executed), keep
@@ -110,10 +150,7 @@ export default function (pi: ExtensionAPI) {
   const yolo = createYoloState();
 
   registerPendingAwareEditTool(pi);
-
-  // Decisions pre-computed in message_end, keyed by toolCallId. `undefined` value
-  // means "allow". Consumed (and removed) by the tool_call hook.
-  const pendingDecisions = new Map<string, ToolDecision>();
+  registerSequentialBashTool(pi);
 
   // True when scope-writes is on and the path resolves outside the project root.
   const isOutsideRoot = (rawPath: string): boolean => {
@@ -239,29 +276,5 @@ export default function (pi: ExtensionAPI) {
     return undefined;
   };
 
-  // Bash confirmations are asked up front, while no tool has started executing yet,
-  // so the TUI's bash elapsed timer (started on tool_execution_start) only covers
-  // real execution time. Write/edit stay in the tool_call hook: they have no timer,
-  // and confirming them in message_end would run before the TUI marks the tool call
-  // args-complete, hiding the pre-rendered inline edit diff.
-  pi.on("message_end", async (event, ctx) => {
-    const message = event.message as any;
-    if (message?.role !== "assistant" || !Array.isArray(message.content)) return undefined;
-
-    pendingDecisions.clear();
-    for (const part of message.content) {
-      if (part?.type !== "toolCall" || part.name !== "bash") continue;
-      pendingDecisions.set(part.id, await decide(part.name, part.arguments ?? {}, ctx));
-    }
-    return undefined;
-  });
-
-  pi.on("tool_call", async (event, ctx) => {
-    if (pendingDecisions.has(event.toolCallId)) {
-      const decision = pendingDecisions.get(event.toolCallId);
-      pendingDecisions.delete(event.toolCallId);
-      return decision;
-    }
-    return decide(event.toolName, event.input, ctx);
-  });
+  pi.on("tool_call", async (event, ctx) => decide(event.toolName, event.input, ctx));
 }
