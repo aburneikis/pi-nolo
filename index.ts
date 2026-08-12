@@ -24,12 +24,13 @@
  * Scope-writes (config `defaultScopeWrites`, toggle live with /scopewrites): when on,
  * `writes` mode still confirms write/edit calls that resolve outside the project root.
  *
- * Confirmation timing: the TUI starts a tool's elapsed timer when `tool_execution_start`
+ * Confirmation timing: the TUI starts bash's elapsed timer when `tool_execution_start`
  * fires, which happens before the `tool_call` gate runs. Confirming there would inflate the
- * reported "Took" duration. So confirmations are asked in `message_end` of the assistant
+ * reported "Took" duration. So bash confirmations are asked in `message_end` of the assistant
  * message (before any tool starts) and the decision is cached per toolCallId; the `tool_call`
- * hook then only replays the cached decision. Tool calls with no cached decision (e.g. injected
- * by another extension) still fall back to confirming inline.
+ * hook then only replays the cached decision. Write/edit (no timer) and tool calls with no
+ * cached decision still confirm inline in the `tool_call` hook, after the TUI has rendered
+ * the tool call and its pre-rendered edit diff.
  *
  * Strict non-interactive (config `strictNonInteractive`, or env NOLO_STRICT=1/0): when
  * running without a UI (e.g. `pi -p` / --mode json) there is no way to confirm, so by
@@ -206,15 +207,18 @@ export default function (pi: ExtensionAPI) {
     return undefined;
   };
 
-  // Ask for confirmation up front, while no tool has started executing yet, so the
-  // TUI's per-tool elapsed timer only covers real execution time.
+  // Bash confirmations are asked up front, while no tool has started executing yet,
+  // so the TUI's bash elapsed timer (started on tool_execution_start) only covers
+  // real execution time. Write/edit stay in the tool_call hook: they have no timer,
+  // and confirming them in message_end would run before the TUI marks the tool call
+  // args-complete, hiding the pre-rendered inline edit diff.
   pi.on("message_end", async (event, ctx) => {
     const message = event.message as any;
     if (message?.role !== "assistant" || !Array.isArray(message.content)) return undefined;
 
     pendingDecisions.clear();
     for (const part of message.content) {
-      if (part?.type !== "toolCall") continue;
+      if (part?.type !== "toolCall" || part.name !== "bash") continue;
       pendingDecisions.set(part.id, await decide(part.name, part.arguments ?? {}, ctx));
     }
     return undefined;
