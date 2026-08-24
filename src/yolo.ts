@@ -11,8 +11,8 @@ export interface YoloState {
   scopeWrites: boolean;
 }
 
-export function createYoloState(scopeWrites = false): YoloState {
-  return { mode: "off", scopeWrites };
+export function createYoloState(defaults: Partial<YoloState> = {}): YoloState {
+  return { mode: defaults.mode ?? "off", scopeWrites: defaults.scopeWrites ?? false };
 }
 
 /**

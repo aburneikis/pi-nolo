@@ -1,7 +1,8 @@
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
-import type { NoloConfig } from "./types.js";
+import { YOLO_MODES } from "./types.js";
+import type { NoloConfig, YoloMode } from "./types.js";
 
 // --- Defaults ---
 
@@ -157,6 +158,9 @@ export const XARGS_SAFE_PREFIXES = new Set([
 // Default YOLO-cycle shortcut. Configurable via `shortcut` in nolo.json.
 export const DEFAULT_SHORTCUT = "ctrl+y";
 
+// YOLO mode a fresh session starts in. Configurable via `defaultYoloMode`.
+export const DEFAULT_YOLO_MODE: YoloMode = "off";
+
 // Default for the scope-writes toggle. Configurable via `defaultScopeWrites`.
 export const DEFAULT_SCOPE_WRITES = false;
 
@@ -184,6 +188,7 @@ export interface LoadedConfig {
   dangerousRegexes: RegExp[];
   segmentDangerousRegexes: RegExp[];
   shortcut: string;
+  defaultYoloMode: YoloMode;
   defaultScopeWrites: boolean;
   strictNonInteractive: boolean;
 }
@@ -236,6 +241,14 @@ export function loadConfig(opts: LoadConfigOptions = {}): LoadedConfig {
     shortcut = projectCfg.shortcut;
   }
 
+  // YOLO mode default: project overrides global overrides default. Unknown
+  // values are ignored so a typo cannot silently disable confirmations.
+  let defaultYoloMode = DEFAULT_YOLO_MODE;
+  for (const cfg of [globalCfg, projectCfg]) {
+    const mode = cfg?.defaultYoloMode;
+    if (mode && YOLO_MODES.includes(mode)) defaultYoloMode = mode;
+  }
+
   // Scope-writes default: project overrides global overrides default.
   let defaultScopeWrites = DEFAULT_SCOPE_WRITES;
   if (typeof globalCfg?.defaultScopeWrites === "boolean") {
@@ -264,6 +277,7 @@ export function loadConfig(opts: LoadConfigOptions = {}): LoadedConfig {
     dangerousRegexes: dangerousPatterns.map((p) => new RegExp(p)),
     segmentDangerousRegexes: segmentDangerousPatterns.map((p) => new RegExp(p)),
     shortcut,
+    defaultYoloMode,
     defaultScopeWrites,
     strictNonInteractive,
   };

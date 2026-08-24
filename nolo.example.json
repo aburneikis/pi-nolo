@@ -82,6 +82,7 @@
     "\\bsystem\\s*\\("
   ],
   "shortcut": "ctrl+y",
+  "defaultYoloMode": "off",
   "defaultScopeWrites": false,
   "strictNonInteractive": false
 }

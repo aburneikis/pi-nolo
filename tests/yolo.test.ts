@@ -20,6 +20,10 @@ describe("createYoloState", () => {
     const state = createYoloState();
     assert.equal(state.mode, "off");
   });
+
+  it("starts in the given mode", () => {
+    assert.equal(createYoloState({ mode: "full" }).mode, "full");
+  });
 });
 
 describe("restoreYoloMode", () => {
@@ -201,11 +205,11 @@ describe("scope-writes", () => {
 
   it("defaults to the value passed into createYoloState", () => {
     assert.equal(createYoloState().scopeWrites, false);
-    assert.equal(createYoloState(true).scopeWrites, true);
+    assert.equal(createYoloState({ scopeWrites: true }).scopeWrites, true);
   });
 
   it("toggleScopeWrites flips and persists", () => {
-    const state = createYoloState(false);
+    const state = createYoloState({ scopeWrites: false });
     const pi = makePi() as any;
     toggleScopeWrites(state, pi, makeCtx() as any);
     assert.equal(state.scopeWrites, true);
@@ -214,7 +218,7 @@ describe("scope-writes", () => {
   });
 
   it("restoreScopeWrites restores from last entry", () => {
-    const state = createYoloState(false);
+    const state = createYoloState({ scopeWrites: false });
     restoreScopeWrites(
       [{ type: "custom", customType: SCOPE_WRITES_ENTRY_TYPE, data: { scopeWrites: true } }],
       state,
@@ -223,7 +227,7 @@ describe("scope-writes", () => {
   });
 
   it("restoreScopeWrites leaves default when no entry", () => {
-    const state = createYoloState(true);
+    const state = createYoloState({ scopeWrites: true });
     restoreScopeWrites([], state);
     assert.equal(state.scopeWrites, true);
   });

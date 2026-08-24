@@ -129,6 +129,25 @@ describe("loadConfig", () => {
     cleanProjectCfg();
   });
 
+  it("defaults the YOLO mode to off when no config exists", () => {
+    cleanProjectCfg();
+    assert.equal(loadConfig().defaultYoloMode, "off");
+  });
+
+  it("project defaultYoloMode overrides the default", () => {
+    mkdirSync(".pi", { recursive: true });
+    writeFileSync(PROJECT_CFG, JSON.stringify({ defaultYoloMode: "full" }));
+    assert.equal(loadConfig().defaultYoloMode, "full");
+    cleanProjectCfg();
+  });
+
+  it("ignores unknown defaultYoloMode values", () => {
+    mkdirSync(".pi", { recursive: true });
+    writeFileSync(PROJECT_CFG, JSON.stringify({ defaultYoloMode: "yolo" }));
+    assert.equal(loadConfig().defaultYoloMode, "off");
+    cleanProjectCfg();
+  });
+
   it("defaults scope-writes to false when no config exists", () => {
     cleanProjectCfg();
     assert.equal(loadConfig().defaultScopeWrites, false);

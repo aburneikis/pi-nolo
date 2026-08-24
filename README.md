@@ -63,6 +63,16 @@ off → writes-yolo → full-yolo → off → …
 
 The current mode is shown in the footer status bar. It is also persisted in the session so it survives a `/reload`.
 
+### Starting mode
+
+A fresh session starts in `off`. Set `"defaultYoloMode"` in `nolo.json` (`"off"`, `"writes"`, or `"full"`; project overrides global) to start elsewhere. A mode persisted in the session history still wins, so `/reload` keeps the live mode. Unknown values fall back to `off`.
+
+```json
+{
+  "defaultYoloMode": "writes"
+}
+```
+
 ### When to use each mode
 
 - **`writes`** — you trust the edits but still want a gate on shell commands.
@@ -155,6 +165,7 @@ You can customize the allowlist with a `nolo.json` config file:
 - **`safePrefixes`** — merged (union of defaults + global + project)
 - **`dangerousPatterns`** — overridden (project overrides global overrides defaults)
 - **`shortcut`** — overridden (project overrides global overrides default)
+- **`defaultYoloMode`** — overridden (project overrides global overrides default)
 
 If no config files exist, the hardcoded defaults are used. See [`nolo.example.json`](nolo.example.json) for the full default configuration.
 

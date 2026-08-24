@@ -20,6 +20,8 @@
  *   off        — default: confirm all writes/edits/bash (safe bash commands auto-approved)
  *   writes     — auto-allow all write/edit; bash still follows safe-prefix rules
  *   full       — auto-allow everything: write, edit, and all bash commands
+ * A fresh session starts in config `defaultYoloMode` (default off); a mode persisted in the
+ * session history overrides it, so /reload keeps the live mode.
  *
  * Scope-writes (config `defaultScopeWrites`, toggle live with /scopewrites): when on,
  * `writes` mode still confirms write/edit calls that resolve outside the project root.
@@ -218,7 +220,8 @@ export default function (pi: ExtensionAPI) {
     strictNonInteractive = config.strictNonInteractive;
     projectRoot = ctx.cwd;
 
-    // Seed scope-writes from config, then let any persisted session toggle win.
+    // Seed from config, then let any persisted session choice win.
+    yolo.mode = config.defaultYoloMode;
     yolo.scopeWrites = config.defaultScopeWrites;
     restoreYoloMode(ctx.sessionManager.getEntries(), yolo);
     restoreScopeWrites(ctx.sessionManager.getEntries(), yolo);

@@ -27,6 +27,11 @@ export interface NoloConfig {
   segmentDangerousPatterns: string[];
   shortcut?: string;
   /**
+   * YOLO mode a fresh session starts in. A mode persisted in the session
+   * history still wins, so /reload keeps the live mode. Default: "off".
+   */
+  defaultYoloMode?: YoloMode;
+  /**
    * When true, `writes` mode confirms write/edit calls that resolve outside the
    * project root. Can be toggled live with /scopewrites. Default: false.
    */
