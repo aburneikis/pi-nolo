@@ -257,6 +257,14 @@ export default function (pi: ExtensionAPI) {
 
   // --- Tool gate ---
 
+  // Ring the terminal bell, then confirm. Terminals map BEL to their native
+  // attention signal (urgency hint / dock bounce / tab highlight), so an
+  // unfocused window is marked while a confirmation is pending.
+  const confirmWithBell = async (ctx: any, title: string, detail: string): Promise<boolean> => {
+    process.stdout.write("\x07");
+    return ctx.ui.confirm(title, detail);
+  };
+
   // Runs the gating rules for one tool call, asking the user when needed.
   const decide = async (toolName: string, input: any, ctx: any): Promise<ToolDecision> => {
     // Non-interactive (e.g. `pi -p` / --mode json): no way to confirm.
@@ -296,7 +304,7 @@ export default function (pi: ExtensionAPI) {
       const lines = content.split("\n").length;
 
       const title = yolo.mode === "writes" ? "Write outside project root?" : "Write file?";
-      const confirmed = await ctx.ui.confirm(title, `${path} (${lines} lines)`);
+      const confirmed = await confirmWithBell(ctx, title, `${path} (${lines} lines)`);
       if (!confirmed) return { block: true, reason: "Blocked by user" };
 
     } else if (toolName === "edit") {
@@ -304,7 +312,7 @@ export default function (pi: ExtensionAPI) {
       if (yolo.mode === "writes" && !isOutsideRoot(input.path as string)) return undefined;
 
       const title = yolo.mode === "writes" ? "Edit outside project root?" : "Edit file?";
-      const confirmed = await ctx.ui.confirm(title, input.path as string);
+      const confirmed = await confirmWithBell(ctx, title, input.path as string);
       if (!confirmed) return { block: true, reason: "Blocked by user" };
 
     } else if (toolName === "bash") {
@@ -321,7 +329,7 @@ export default function (pi: ExtensionAPI) {
 
       const firstLine = command.split("\n")[0];
       const preview = command.includes("\n") ? `${firstLine}...` : firstLine;
-      const confirmed = await ctx.ui.confirm("Run command?", preview);
+      const confirmed = await confirmWithBell(ctx, "Run command?", preview);
       if (!confirmed) return { block: true, reason: "Blocked by user" };
     }
 
