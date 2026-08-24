@@ -201,6 +201,7 @@ export default function (pi: ExtensionAPI) {
   let segmentDangerousRegexes = DEFAULT_SEGMENT_DANGEROUS_PATTERNS.map((p) => new RegExp(p));
   let projectRoot = process.cwd();
   let strictNonInteractive = loadConfig().strictNonInteractive;
+  let bellOnConfirm = loadConfig().bellOnConfirm;
   const yolo = createYoloState();
 
   // True when scope-writes is on and the path resolves outside the project root.
@@ -218,6 +219,7 @@ export default function (pi: ExtensionAPI) {
     dangerousRegexes = config.dangerousRegexes;
     segmentDangerousRegexes = config.segmentDangerousRegexes;
     strictNonInteractive = config.strictNonInteractive;
+    bellOnConfirm = config.bellOnConfirm;
     projectRoot = ctx.cwd;
 
     // Seed from config, then let any persisted session choice win.
@@ -260,8 +262,9 @@ export default function (pi: ExtensionAPI) {
   // Ring the terminal bell, then confirm. Terminals map BEL to their native
   // attention signal (urgency hint / dock bounce / tab highlight), so an
   // unfocused window is marked while a confirmation is pending.
+  // Disable with `"bellOnConfirm": false` in nolo.json.
   const confirmWithBell = async (ctx: any, title: string, detail: string): Promise<boolean> => {
-    process.stdout.write("\x07");
+    if (bellOnConfirm) process.stdout.write("\x07");
     return ctx.ui.confirm(title, detail);
   };
 

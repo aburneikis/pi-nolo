@@ -186,6 +186,25 @@ describe("loadConfig", () => {
     cleanProjectCfg();
   });
 
+  it("defaults bellOnConfirm to true when no config exists", () => {
+    cleanProjectCfg();
+    assert.equal(loadConfig({ env: {} }).bellOnConfirm, true);
+  });
+
+  it("project bellOnConfirm overrides the default", () => {
+    mkdirSync(".pi", { recursive: true });
+    writeFileSync(PROJECT_CFG, JSON.stringify({ bellOnConfirm: false }));
+    assert.equal(loadConfig({ env: {} }).bellOnConfirm, false);
+    cleanProjectCfg();
+  });
+
+  it("ignores non-boolean bellOnConfirm values", () => {
+    mkdirSync(".pi", { recursive: true });
+    writeFileSync(PROJECT_CFG, JSON.stringify({ bellOnConfirm: "no" }));
+    assert.equal(loadConfig({ env: {} }).bellOnConfirm, true);
+    cleanProjectCfg();
+  });
+
   it("NOLO_STRICT env var overrides config", () => {
     mkdirSync(".pi", { recursive: true });
     writeFileSync(PROJECT_CFG, JSON.stringify({ strictNonInteractive: false }));

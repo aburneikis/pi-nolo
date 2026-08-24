@@ -41,6 +41,12 @@ With strict mode on, `write`/`edit` calls and non-read-only bash commands are bl
 NOLO_STRICT=1 pi -p "Review the code in src/"
 ```
 
+## Confirmation bell
+
+When a confirmation dialog opens, nolo writes a terminal bell (`BEL`, `\x07`) to stdout. Terminals map this to their native attention signal — urgency hint, taskbar or tab highlight, dock bounce, tmux bell alert — so a background window shows that it is waiting for you.
+
+Disable it with `"bellOnConfirm": false` in `nolo.json` (project overrides global; default `true`).
+
 ## Pre-rendered edit diffs
 
 Since pi ~0.84, the built-in edit tool pre-renders the diff as soon as the tool arguments are complete -- before the edit is applied. Because nolo confirms edits in the `tool_call` hook (after the tool call is rendered), you see exactly what will change while the confirmation dialog is open. The bundled pre-renderer that older versions of this extension carried is no longer needed and has been removed.
@@ -166,6 +172,7 @@ You can customize the allowlist with a `nolo.json` config file:
 - **`dangerousPatterns`** — overridden (project overrides global overrides defaults)
 - **`shortcut`** — overridden (project overrides global overrides default)
 - **`defaultYoloMode`** — overridden (project overrides global overrides default)
+- **`bellOnConfirm`** — overridden (project overrides global overrides default)
 
 If no config files exist, the hardcoded defaults are used. See [`nolo.example.json`](nolo.example.json) for the full default configuration.
 
