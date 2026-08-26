@@ -1,6 +1,6 @@
 # pi-nolo
 
-No-YOLO mode for [pi-coding-agent](https://github.com/nichochar/pi-mono). Gates `write`, `edit`, and `bash` tool calls behind user confirmation — press Enter to allow, Escape to block.
+No-YOLO mode for [pi-coding-agent](https://github.com/nichochar/pi-mono). Gates `write`, `edit`, and `bash` tool calls behind user confirmation — pick `yes`, `no`, or `yolo` (allow and switch to full-yolo mode for the rest of the session).
 
 Read-safe bash commands (`ls`, `grep`, `git status`, etc.) are auto-approved via a configurable allowlist, so you only get prompted for commands that could mutate state.
 
@@ -28,7 +28,7 @@ Every time the agent tries to:
 - **Edit a file** — confirms with the file path; shows a pre-rendered diff preview before the tool finishes executing
 - **Run a bash command** — auto-approves safe read-only commands; confirms everything else
 
-You get a dialog: Enter to allow, Escape to block.
+You get a dialog with three options: `yes`, `no`, and `yolo`. `yolo` approves the current call and switches to full-yolo mode, so nothing is gated afterwards. Escape blocks.
 
 In non-interactive mode (no UI, e.g. `pi -p` or `--mode json`) nothing is gated by default, since there is no way to confirm. Enable **strict non-interactive** mode to instantly block anything that would have required confirmation instead:
 

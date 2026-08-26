@@ -1,7 +1,8 @@
 /**
  * Confirm All Writes Extension (pi-nolo)
  *
- * Gates write, edit, and bash tools behind user confirmation (Enter to allow, Escape to block).
+ * Gates write, edit, and bash tools behind user confirmation (yes / no / yolo;
+ * yolo allows the call and switches to full-yolo mode, Escape blocks).
  * Read-safe bash commands are auto-approved: a command is safe when every segment (split on |, &&,
  * ||, ;) starts with a known safe prefix and the command contains no stdout redirects or unsafe
  * constructs. Two layers of dangerous-pattern checks are applied:
@@ -51,10 +52,19 @@
  * the agent run settles and is ready for follow-up.
  */
 
-import { createBashToolDefinition, createEditToolDefinition, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  createBashToolDefinition,
+  createEditToolDefinition,
+  type ExtensionAPI,
+} from "@earendil-works/pi-coding-agent";
 import { resolve, sep } from "node:path";
 import { accessSync, constants, statSync } from "node:fs";
-import { loadConfig, DEFAULT_SAFE_PREFIXES, DEFAULT_DANGEROUS_PATTERNS, DEFAULT_SEGMENT_DANGEROUS_PATTERNS } from "./src/config.js";
+import {
+  loadConfig,
+  DEFAULT_SAFE_PREFIXES,
+  DEFAULT_DANGEROUS_PATTERNS,
+  DEFAULT_SEGMENT_DANGEROUS_PATTERNS,
+} from "./src/config.js";
 import { isSafeCommand } from "./src/safety.js";
 import type { ToolDecision } from "./src/types.js";
 
@@ -76,12 +86,17 @@ import {
   restoreScopeWrites,
   renderStatus,
   cycleYoloMode,
+  setYoloMode,
   toggleScopeWrites,
 } from "./src/yolo.js";
 
 // Confirmation callback provided by the extension entry point. Late-bound so the
 // tool registration helpers can be defined at module scope.
-type ConfirmFn = (toolName: string, input: any, ctx: any) => Promise<ToolDecision>;
+type ConfirmFn = (
+  toolName: string,
+  input: any,
+  ctx: any,
+) => Promise<ToolDecision>;
 
 // Two shared chains pipeline batched tool calls (all execute closures run
 // concurrently on agent-loop's parallel path):
@@ -128,24 +143,43 @@ function registerPipelinedBashTool(pi: ExtensionAPI, confirm: ConfirmFn) {
 
   pi.registerTool({
     ...base,
-    async execute(toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) {
+    async execute(
+      toolCallId: string,
+      params: any,
+      signal: any,
+      onUpdate: any,
+      ctx: any,
+    ) {
       try {
         return await pipeline(
-          () => (ctx.hasUI ? confirm("bash", params, ctx) : Promise.resolve(undefined)),
+          () =>
+            ctx.hasUI
+              ? confirm("bash", params, ctx)
+              : Promise.resolve(undefined),
           async () => {
             actualStartTimes.set(toolCallId, Date.now());
             try {
-              return await base.execute(toolCallId, params, signal, onUpdate, ctx);
+              return await base.execute(
+                toolCallId,
+                params,
+                signal,
+                onUpdate,
+                ctx,
+              );
             } finally {
               // Keep the entry briefly for the final render, then drop it.
-              setTimeout(() => actualStartTimes.delete(toolCallId), 60_000).unref?.();
+              setTimeout(
+                () => actualStartTimes.delete(toolCallId),
+                60_000,
+              ).unref?.();
             }
           },
           false,
         );
       } catch (err) {
         // Blocked before execution: zero out the timer instead of showing the confirm wait.
-        if (!actualStartTimes.has(toolCallId)) actualStartTimes.set(toolCallId, Date.now());
+        if (!actualStartTimes.has(toolCallId))
+          actualStartTimes.set(toolCallId, Date.now());
         throw err;
       }
     },
@@ -171,9 +205,16 @@ function registerPendingAwareEditTool(pi: ExtensionAPI, confirm: ConfirmFn) {
 
   pi.registerTool({
     ...base,
-    async execute(toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) {
+    async execute(
+      toolCallId: string,
+      params: any,
+      signal: any,
+      onUpdate: any,
+      ctx: any,
+    ) {
       return pipeline(
-        () => (ctx.hasUI ? confirm("edit", params, ctx) : Promise.resolve(undefined)),
+        () =>
+          ctx.hasUI ? confirm("edit", params, ctx) : Promise.resolve(undefined),
         () => base.execute(toolCallId, params, signal, onUpdate, ctx),
         true,
       );
@@ -189,7 +230,9 @@ function registerPendingAwareEditTool(pi: ExtensionAPI, confirm: ConfirmFn) {
       if (context.state) context.state.noloSettled = true;
       const callComponent: any = context.state?.callComponent;
       if (callComponent && isCleanPreview(callComponent) && !context.isError) {
-        callComponent.setBgFn((text: string) => theme.bg("toolSuccessBg", text));
+        callComponent.setBgFn((text: string) =>
+          theme.bg("toolSuccessBg", text),
+        );
       }
       return base.renderResult!(result, options, theme, context);
     },
@@ -202,7 +245,9 @@ export default function (pi: ExtensionAPI) {
   const { shortcut } = loadConfig();
   let safePrefixes = DEFAULT_SAFE_PREFIXES;
   let dangerousRegexes = DEFAULT_DANGEROUS_PATTERNS.map((p) => new RegExp(p));
-  let segmentDangerousRegexes = DEFAULT_SEGMENT_DANGEROUS_PATTERNS.map((p) => new RegExp(p));
+  let segmentDangerousRegexes = DEFAULT_SEGMENT_DANGEROUS_PATTERNS.map(
+    (p) => new RegExp(p),
+  );
   let projectRoot = process.cwd();
   let strictNonInteractive = loadConfig().strictNonInteractive;
   let bellOnConfirm = loadConfig().bellOnConfirm;
@@ -237,7 +282,6 @@ export default function (pi: ExtensionAPI) {
     if (ctx.hasUI) {
       ctx.ui.setStatus("nolo", renderStatus(yolo, ctx.ui.theme));
     }
-
   });
 
   // --- /yolo command and configured shortcut: cycle through modes ---
@@ -259,8 +303,10 @@ export default function (pi: ExtensionAPI) {
   // --- /scopewrites command: toggle project-root confinement for writes mode ---
 
   pi.registerCommand("scopewrites", {
-    description: "Toggle confirming write/edit outside the project root in writes mode",
-    handler: async (_args: unknown, ctx: any) => toggleScopeWrites(yolo, pi, ctx),
+    description:
+      "Toggle confirming write/edit outside the project root in writes mode",
+    handler: async (_args: unknown, ctx: any) =>
+      toggleScopeWrites(yolo, pi, ctx),
   });
 
   // --- Tool gate ---
@@ -271,9 +317,28 @@ export default function (pi: ExtensionAPI) {
   // Disable with `"bellOnConfirm": false` in nolo.json.
   const ringBell = () => process.stdout.write("\x07");
 
-  const confirmWithBell = async (ctx: any, title: string, detail: string): Promise<boolean> => {
+  // Three-way prompt: allow once, block, or switch to full YOLO (which also
+  // allows the current call). Escape/dismiss blocks, like the plain confirm did.
+  const ALLOW_OPTION = "yes";
+  const BLOCK_OPTION = "no";
+  const YOLO_OPTION = "yolo";
+
+  const confirmWithBell = async (
+    ctx: any,
+    title: string,
+    detail: string,
+  ): Promise<boolean> => {
     if (bellOnConfirm) ringBell();
-    return ctx.ui.confirm(title, detail);
+    const choice = await ctx.ui.select(`${title} ${detail}`, [
+      ALLOW_OPTION,
+      BLOCK_OPTION,
+      YOLO_OPTION,
+    ]);
+    if (choice === YOLO_OPTION) {
+      setYoloMode(yolo, "full", pi, ctx);
+      return true;
+    }
+    return choice === ALLOW_OPTION;
   };
 
   // Ring once when the run has fully settled (no retry, compaction, or queued
@@ -284,7 +349,11 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Runs the gating rules for one tool call, asking the user when needed.
-  const decide = async (toolName: string, input: any, ctx: any): Promise<ToolDecision> => {
+  const decide = async (
+    toolName: string,
+    input: any,
+    ctx: any,
+  ): Promise<ToolDecision> => {
     // Non-interactive (e.g. `pi -p` / --mode json): no way to confirm.
     // Default: don't gate. In strict mode: instantly block anything that
     // would have required confirmation (write/edit and unsafe bash).
@@ -299,15 +368,22 @@ export default function (pi: ExtensionAPI) {
       if (toolName === "bash") {
         const command = input.command as string;
         if (
-          isSafeCommand(command, safePrefixes, dangerousRegexes, segmentDangerousRegexes, {
-            isExecutableDir,
-          })
+          isSafeCommand(
+            command,
+            safePrefixes,
+            dangerousRegexes,
+            segmentDangerousRegexes,
+            {
+              isExecutableDir,
+            },
+          )
         ) {
           return undefined;
         }
         return {
           block: true,
-          reason: "Blocked by nolo strict non-interactive mode: command is not read-only safe",
+          reason:
+            "Blocked by nolo strict non-interactive mode: command is not read-only safe",
         };
       }
       return undefined;
@@ -315,32 +391,44 @@ export default function (pi: ExtensionAPI) {
 
     if (toolName === "write") {
       if (yolo.mode === "full") return undefined;
-      if (yolo.mode === "writes" && !isOutsideRoot(input.path as string)) return undefined;
+      if (yolo.mode === "writes" && !isOutsideRoot(input.path as string))
+        return undefined;
 
       const path = input.path as string;
       const content = (input.content as string) ?? "";
       const lines = content.split("\n").length;
 
-      const title = yolo.mode === "writes" ? "Write outside project root?" : "Write file?";
-      const confirmed = await confirmWithBell(ctx, title, `${path} (${lines} lines)`);
+      const title =
+        yolo.mode === "writes" ? "Write outside project root?" : "Write file?";
+      const confirmed = await confirmWithBell(
+        ctx,
+        title,
+        `${path} (${lines} lines)`,
+      );
       if (!confirmed) return { block: true, reason: "Blocked by user" };
-
     } else if (toolName === "edit") {
       if (yolo.mode === "full") return undefined;
-      if (yolo.mode === "writes" && !isOutsideRoot(input.path as string)) return undefined;
+      if (yolo.mode === "writes" && !isOutsideRoot(input.path as string))
+        return undefined;
 
-      const title = yolo.mode === "writes" ? "Edit outside project root?" : "Edit file?";
+      const title =
+        yolo.mode === "writes" ? "Edit outside project root?" : "Edit file?";
       const confirmed = await confirmWithBell(ctx, title, input.path as string);
       if (!confirmed) return { block: true, reason: "Blocked by user" };
-
     } else if (toolName === "bash") {
       if (yolo.mode === "full") return undefined;
 
       const command = input.command as string;
       if (
-        isSafeCommand(command, safePrefixes, dangerousRegexes, segmentDangerousRegexes, {
-          isExecutableDir,
-        })
+        isSafeCommand(
+          command,
+          safePrefixes,
+          dangerousRegexes,
+          segmentDangerousRegexes,
+          {
+            isExecutableDir,
+          },
+        )
       ) {
         return undefined;
       }
@@ -361,7 +449,8 @@ export default function (pi: ExtensionAPI) {
     // With a UI, bash and edit confirm inside their execute wrappers (pipelined);
     // the gate must not prompt for them or it would serialize prompts behind the
     // prepare loop. Without a UI, decide() only applies strict-mode blocking.
-    if (ctx.hasUI && (event.toolName === "bash" || event.toolName === "edit")) return undefined;
+    if (ctx.hasUI && (event.toolName === "bash" || event.toolName === "edit"))
+      return undefined;
     return decide(event.toolName, event.input, ctx);
   });
 }

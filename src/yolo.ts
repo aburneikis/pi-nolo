@@ -77,14 +77,22 @@ export function renderStatus(
   return theme.fg("error", YOLO_LABELS.full);
 }
 
+type ModeCtx = { hasUI: boolean; ui: { setStatus: (id: string, text: string) => void; theme: any; notify: (msg: string, type: string) => void } };
+
 /** Cycle mode, persist to session, and notify the user. */
-export function cycleYoloMode(
-  state: YoloState,
-  pi: ExtensionAPI,
-  ctx: { hasUI: boolean; ui: { setStatus: (id: string, text: string) => void; theme: any; notify: (msg: string, type: string) => void } },
-): void {
+export function cycleYoloMode(state: YoloState, pi: ExtensionAPI, ctx: ModeCtx): void {
   const currentIndex = YOLO_MODES.indexOf(state.mode);
-  state.mode = YOLO_MODES[(currentIndex + 1) % YOLO_MODES.length];
+  setYoloMode(state, YOLO_MODES[(currentIndex + 1) % YOLO_MODES.length], pi, ctx);
+}
+
+/** Set mode explicitly, persist to session, and notify the user. */
+export function setYoloMode(
+  state: YoloState,
+  mode: YoloMode,
+  pi: ExtensionAPI,
+  ctx: ModeCtx,
+): void {
+  state.mode = mode;
 
   // Persist so mode survives /reload
   pi.appendEntry(YOLO_ENTRY_TYPE, { mode: state.mode });
