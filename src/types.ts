@@ -48,4 +48,9 @@ export interface NoloConfig {
    * terminal raises its native attention signal. Default: true.
    */
   bellOnConfirm?: boolean;
+  /**
+   * Ring the terminal bell (BEL) when the agent run has settled and is ready
+   * for follow-up, so an unfocused terminal is marked. Default: true.
+   */
+  bellOnIdle?: boolean;
 }

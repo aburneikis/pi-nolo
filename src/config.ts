@@ -171,6 +171,9 @@ export const DEFAULT_STRICT_NON_INTERACTIVE = false;
 // Default for the confirmation bell. Configurable via `bellOnConfirm`.
 export const DEFAULT_BELL_ON_CONFIRM = true;
 
+// Default for the idle (agent settled) bell. Configurable via `bellOnIdle`.
+export const DEFAULT_BELL_ON_IDLE = true;
+
 // Matches stdout redirects (> or >>). Only 2> (stderr) is exempted; any other
 // fd-prefixed or bare redirect is treated as a potential file write.
 export const STDOUT_REDIRECT_RE = /(?<!2)>>?(?!&)/;
@@ -195,6 +198,7 @@ export interface LoadedConfig {
   defaultScopeWrites: boolean;
   strictNonInteractive: boolean;
   bellOnConfirm: boolean;
+  bellOnIdle: boolean;
 }
 
 export interface LoadConfigOptions {
@@ -281,6 +285,11 @@ export function loadConfig(opts: LoadConfigOptions = {}): LoadedConfig {
   if (typeof globalCfg?.bellOnConfirm === "boolean") bellOnConfirm = globalCfg.bellOnConfirm;
   if (typeof projectCfg?.bellOnConfirm === "boolean") bellOnConfirm = projectCfg.bellOnConfirm;
 
+  // Idle bell: project overrides global overrides default. Independent of bellOnConfirm.
+  let bellOnIdle = DEFAULT_BELL_ON_IDLE;
+  if (typeof globalCfg?.bellOnIdle === "boolean") bellOnIdle = globalCfg.bellOnIdle;
+  if (typeof projectCfg?.bellOnIdle === "boolean") bellOnIdle = projectCfg.bellOnIdle;
+
   return {
     safePrefixes,
     dangerousRegexes: dangerousPatterns.map((p) => new RegExp(p)),
@@ -290,5 +299,6 @@ export function loadConfig(opts: LoadConfigOptions = {}): LoadedConfig {
     defaultScopeWrites,
     strictNonInteractive,
     bellOnConfirm,
+    bellOnIdle,
   };
 }

@@ -205,6 +205,27 @@ describe("loadConfig", () => {
     cleanProjectCfg();
   });
 
+  it("defaults bellOnIdle to true when no config exists", () => {
+    cleanProjectCfg();
+    assert.equal(loadConfig({ env: {} }).bellOnIdle, true);
+  });
+
+  it("project bellOnIdle overrides the default independently of bellOnConfirm", () => {
+    mkdirSync(".pi", { recursive: true });
+    writeFileSync(PROJECT_CFG, JSON.stringify({ bellOnIdle: false }));
+    const cfg = loadConfig({ env: {} });
+    assert.equal(cfg.bellOnIdle, false);
+    assert.equal(cfg.bellOnConfirm, true);
+    cleanProjectCfg();
+  });
+
+  it("ignores non-boolean bellOnIdle values", () => {
+    mkdirSync(".pi", { recursive: true });
+    writeFileSync(PROJECT_CFG, JSON.stringify({ bellOnIdle: "no" }));
+    assert.equal(loadConfig({ env: {} }).bellOnIdle, true);
+    cleanProjectCfg();
+  });
+
   it("NOLO_STRICT env var overrides config", () => {
     mkdirSync(".pi", { recursive: true });
     writeFileSync(PROJECT_CFG, JSON.stringify({ strictNonInteractive: false }));

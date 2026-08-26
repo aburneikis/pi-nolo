@@ -45,6 +45,10 @@
  * running without a UI (e.g. `pi -p` / --mode json) there is no way to confirm, so by
  * default nothing is gated. With strict mode on, write/edit and unsafe bash commands
  * are instantly blocked instead; safe read-only bash commands still run.
+ *
+ * Bells (config `bellOnConfirm` and `bellOnIdle`, both default true, configured
+ * separately): a terminal BEL is written when a confirmation prompt opens, and when
+ * the agent run settles and is ready for follow-up.
  */
 
 import { createBashToolDefinition, createEditToolDefinition, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -202,6 +206,7 @@ export default function (pi: ExtensionAPI) {
   let projectRoot = process.cwd();
   let strictNonInteractive = loadConfig().strictNonInteractive;
   let bellOnConfirm = loadConfig().bellOnConfirm;
+  let bellOnIdle = loadConfig().bellOnIdle;
   const yolo = createYoloState();
 
   // True when scope-writes is on and the path resolves outside the project root.
@@ -220,6 +225,7 @@ export default function (pi: ExtensionAPI) {
     segmentDangerousRegexes = config.segmentDangerousRegexes;
     strictNonInteractive = config.strictNonInteractive;
     bellOnConfirm = config.bellOnConfirm;
+    bellOnIdle = config.bellOnIdle;
     projectRoot = ctx.cwd;
 
     // Seed from config, then let any persisted session choice win.
@@ -263,10 +269,19 @@ export default function (pi: ExtensionAPI) {
   // attention signal (urgency hint / dock bounce / tab highlight), so an
   // unfocused window is marked while a confirmation is pending.
   // Disable with `"bellOnConfirm": false` in nolo.json.
+  const ringBell = () => process.stdout.write("\x07");
+
   const confirmWithBell = async (ctx: any, title: string, detail: string): Promise<boolean> => {
-    if (bellOnConfirm) process.stdout.write("\x07");
+    if (bellOnConfirm) ringBell();
     return ctx.ui.confirm(title, detail);
   };
+
+  // Ring once when the run has fully settled (no retry, compaction, or queued
+  // continuation left), i.e. the agent is ready for follow-up.
+  // Disable with `"bellOnIdle": false` in nolo.json.
+  pi.on("agent_settled", async (_event, ctx) => {
+    if (bellOnIdle && ctx.hasUI) ringBell();
+  });
 
   // Runs the gating rules for one tool call, asking the user when needed.
   const decide = async (toolName: string, input: any, ctx: any): Promise<ToolDecision> => {

@@ -85,5 +85,6 @@
   "defaultYoloMode": "off",
   "defaultScopeWrites": false,
   "strictNonInteractive": false,
-  "bellOnConfirm": true
+  "bellOnConfirm": true,
+  "bellOnIdle": true
 }
