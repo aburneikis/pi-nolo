@@ -43,4 +43,14 @@ export interface NoloConfig {
    * env var (1/true to enable, 0/false to disable). Default: false.
    */
   strictNonInteractive?: boolean;
+  /**
+   * Ring the terminal bell (BEL) when a confirmation prompt opens, so the
+   * terminal raises its native attention signal. Default: true.
+   */
+  bellOnConfirm?: boolean;
+  /**
+   * Ring the terminal bell (BEL) when the agent run has settled and is ready
+   * for follow-up, so an unfocused terminal is marked. Default: true.
+   */
+  bellOnIdle?: boolean;
 }

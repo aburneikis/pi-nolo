@@ -186,6 +186,46 @@ describe("loadConfig", () => {
     cleanProjectCfg();
   });
 
+  it("defaults bellOnConfirm to true when no config exists", () => {
+    cleanProjectCfg();
+    assert.equal(loadConfig({ env: {} }).bellOnConfirm, true);
+  });
+
+  it("project bellOnConfirm overrides the default", () => {
+    mkdirSync(".pi", { recursive: true });
+    writeFileSync(PROJECT_CFG, JSON.stringify({ bellOnConfirm: false }));
+    assert.equal(loadConfig({ env: {} }).bellOnConfirm, false);
+    cleanProjectCfg();
+  });
+
+  it("ignores non-boolean bellOnConfirm values", () => {
+    mkdirSync(".pi", { recursive: true });
+    writeFileSync(PROJECT_CFG, JSON.stringify({ bellOnConfirm: "no" }));
+    assert.equal(loadConfig({ env: {} }).bellOnConfirm, true);
+    cleanProjectCfg();
+  });
+
+  it("defaults bellOnIdle to true when no config exists", () => {
+    cleanProjectCfg();
+    assert.equal(loadConfig({ env: {} }).bellOnIdle, true);
+  });
+
+  it("project bellOnIdle overrides the default independently of bellOnConfirm", () => {
+    mkdirSync(".pi", { recursive: true });
+    writeFileSync(PROJECT_CFG, JSON.stringify({ bellOnIdle: false }));
+    const cfg = loadConfig({ env: {} });
+    assert.equal(cfg.bellOnIdle, false);
+    assert.equal(cfg.bellOnConfirm, true);
+    cleanProjectCfg();
+  });
+
+  it("ignores non-boolean bellOnIdle values", () => {
+    mkdirSync(".pi", { recursive: true });
+    writeFileSync(PROJECT_CFG, JSON.stringify({ bellOnIdle: "no" }));
+    assert.equal(loadConfig({ env: {} }).bellOnIdle, true);
+    cleanProjectCfg();
+  });
+
   it("NOLO_STRICT env var overrides config", () => {
     mkdirSync(".pi", { recursive: true });
     writeFileSync(PROJECT_CFG, JSON.stringify({ strictNonInteractive: false }));

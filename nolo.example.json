@@ -84,5 +84,7 @@
   "shortcut": "ctrl+y",
   "defaultYoloMode": "off",
   "defaultScopeWrites": false,
-  "strictNonInteractive": false
+  "strictNonInteractive": false,
+  "bellOnConfirm": true,
+  "bellOnIdle": true
 }
